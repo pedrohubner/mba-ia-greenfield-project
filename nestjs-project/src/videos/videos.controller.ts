@@ -23,7 +23,10 @@ import {
   SignPartUrlsResponseDto,
   UploadedPartsResponseDto,
 } from './dto/upload-parts-response.dto';
-import { InitiateUploadResponseDto } from './dto/video-response.dto';
+import {
+  InitiateUploadResponseDto,
+  VideoResponseDto,
+} from './dto/video-response.dto';
 import { VideosService } from './videos.service';
 
 @ApiTags('videos')
@@ -136,5 +139,25 @@ export class VideosController {
     @Param('publicId') publicId: string,
   ): Promise<UploadedPartsResponseDto> {
     return this.videosService.listUploadedParts(user.sub, publicId);
+  }
+
+  @Get(':publicId')
+  @ApiOperation({
+    summary: 'Get a video',
+    description:
+      'Returns the caller-owned video with its processing status, metadata and a presigned thumbnail URL once processed.',
+  })
+  @ApiResponse({ status: 200, description: 'Video', type: VideoResponseDto })
+  @ApiResponse({ status: 401, description: 'Missing or invalid access token' })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or not owned by the caller (VIDEO_NOT_FOUND)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async getVideo(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+  ): Promise<VideoResponseDto> {
+    return this.videosService.getOwnedVideo(user.sub, publicId);
   }
 }

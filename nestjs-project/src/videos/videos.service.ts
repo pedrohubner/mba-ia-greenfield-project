@@ -24,7 +24,7 @@ import {
   VideoNotFoundException,
 } from './exceptions/video.exceptions';
 import { generatePublicId, isValidPublicId } from './public-id.util';
-import { toVideoResponse } from './video.presenter';
+import { presentVideo } from './video.presenter';
 import { deriveVideoTitle, fileExtension } from './video-title.util';
 import {
   ALLOWED_VIDEO_CONTENT_TYPES,
@@ -173,14 +173,20 @@ export class VideosService {
     }
   }
 
+  async getOwnedVideo(
+    userId: string,
+    publicId: string,
+  ): Promise<VideoResponseDto> {
+    const video = await this.findOwnedOrFail(userId, publicId);
+    return this.present(video);
+  }
+
   async present(video: Video): Promise<VideoResponseDto> {
-    const thumbnailUrl = video.thumbnail_key
-      ? await this.storageService.signGetObjectUrl(video.thumbnail_key, {
-          audience: 'public',
-          ttlSeconds: this.storage.thumbnailUrlTtlSeconds,
-        })
-      : null;
-    return toVideoResponse(video, thumbnailUrl);
+    return presentVideo(
+      video,
+      this.storageService,
+      this.storage.thumbnailUrlTtlSeconds,
+    );
   }
 
   private partCount(sizeBytes: number): number {
