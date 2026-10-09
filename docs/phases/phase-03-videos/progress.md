@@ -1,6 +1,6 @@
 # phase-03-videos — Progress
 
-**Status:** in_progress
+**Status:** completed
 **SIs:** 13/13 completed
 
 ### SI-03.1 — Infra: dependências, namespaces de config e serviços Docker
@@ -20,7 +20,7 @@
   - `StorageService` implements `OnModuleDestroy` to `destroy()` both S3 clients so Jest/worker shutdown releases sockets.
   - `src/test/storage.ts` cleanup also aborts in-progress multipart uploads under the test prefix, not only finished objects.
   - The integration spec covers `deleteObject` too (head → `NotFound`), beyond the plan's table.
-  - Out of scope: the Storage layout spec's CORS row (browser part PUTs need an allowed origin and an exposed `ETag` header) belongs to no SI's Technical actions. No frontend exists in this phase, so it's untested here. Track it as a follow-up for the frontend phase (configure CORS on the pgsty MinIO, e.g. `MINIO_API_CORS_ALLOW_ORIGIN`).
+  - CORS verified (2026-10-09): `pgsty/minio` answers the browser preflight for `PUT` from any origin and lists `Etag` in `Access-Control-Expose-Headers` by default, so presigned part uploads from a browser need no extra storage configuration.
 
 ### SI-03.3 — Entidade Video, migration e gerador de public_id
 - **Status:** completed
