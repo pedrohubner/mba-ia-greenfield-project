@@ -6,6 +6,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
+import type { DataSource } from 'typeorm';
 
 const bucket = process.env.STORAGE_BUCKET ?? 'streamtube-media';
 
@@ -65,5 +66,17 @@ export async function cleanupStoragePrefix(prefix: string): Promise<void> {
     } while (continuationToken);
   } finally {
     client.destroy();
+  }
+}
+
+export async function cleanupVideoStorage(
+  dataSource: DataSource,
+): Promise<void> {
+  const rows = await dataSource.query<{ id: string }[]>(
+    'SELECT id FROM "videos"',
+  );
+  for (const { id } of rows) {
+    await cleanupStoragePrefix(`videos/${id}/`);
+    await cleanupStoragePrefix(`thumbnails/${id}/`);
   }
 }

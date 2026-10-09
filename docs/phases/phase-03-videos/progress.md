@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 4/13 completed
+**SIs:** 6/13 completed
 
 ### SI-03.1 — Infra: dependências, namespaces de config e serviços Docker
 - **Status:** completed
@@ -42,14 +42,27 @@
   - The producer integration spec runs `queue.obliterate({ force: true })` before each test and in `afterAll`. It only touches the `bull-test` prefix, never the dev `bull` keys, and the spec asserts that isolation.
 
 ### SI-03.8 — MediaModule: ffprobe, validação de formato e extração de thumbnail
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 23 passing (6 parseProbeOutput unit, 8 assertPlayable unit, 3 thumbnailTimestamp unit, 6 integration with real ffmpeg and `lavfi` fixtures, ~6 s)
+- **Observations:**
+  - **Random-bytes classification:** in experiments, ffprobe on random bytes in a `.bin` file exits 0 and reports a `bin`/`bintext` "video" (detected from the extension). With a `.mp4`/`.webm` name, or with no extension, it exits 1 with `Invalid data found when processing input`. So `MediaProbeService.probe` maps that specific stderr to `InvalidMediaError` and rethrows every other failure (403, network, timeout) unchanged, leaving those retryable for TD-13. The random fixture is named `random.mp4`, matching the real `original.{ext}` keys.
+  - `parseProbeOutput` takes the raw stdout string and throws `InvalidMediaError` for invalid JSON or output without `format`/`streams`. This covers the "JSON inválido" case from Technical action 2 at the parse step. `assertPlayable` covers the case with no video stream and the whitelist check.
+  - Reason codes and limits live in `src/media/media.constants.ts`. `InvalidMediaError`/`UnsupportedCodecError` extend a `MediaRejectedError` base carrying `reasonCode`, in `src/media/media.errors.ts` (plain errors, not HTTP `DomainException`s). `PROCESSING_ERROR` is left for the worker SI.
+  - Added `-v error` to the ffmpeg thumbnail args (not in the plan's list) so the default banner and progress output stay off stderr. execFile timeouts are 120 s and the thumbnail `maxBuffer` is 20 MiB.
+  - The container whitelist matches `format_name` tokens split on `,` (`mov,mp4,…` → `mp4`; `matroska,webm` → `webm`). As a side effect, a `.mov` file with H.264 video is accepted, because ffprobe reports it under the same `mov,mp4,…` format name. That follows the plan's rule; worth knowing for TD-09.
+  - Fixtures: H.264+AAC MP4 at 1080p (also covers `audioCodec`), VP9 WebM with no audio, MPEG-4 Part 2 MP4 (for `UNSUPPORTED_CODEC`) and 256 KiB of random bytes, all generated in a temp dir and removed in `afterAll`.
 
 ### SI-03.5 — Início do upload: POST /videos com pré-cadastro do rascunho
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 26 passing — set A 21 (title util 7, `VideosService` unit 7, `VideosService` integration 1, `ChannelsService` integration incl. 2 new `findByUserId`, `VideosModule` compilation 1); set B 5 (spec-derived `test/videos-create.e2e-spec.ts`)
+- **Observations:**
+  - Presenter signature: the plan names `toVideoResponse(video)`. It is implemented as the pure `toVideoResponse(video, thumbnailUrl)`, and `VideosService.present(video)` signs the thumbnail (public audience, `THUMBNAIL_URL_TTL_SECONDS`) before calling it. This keeps the presenter free of I/O for its SI-03.11 unit test.
+  - `isPgUniqueViolationOnColumn` was extracted to `src/common/database/pg-errors.ts` for the `public_id` retry (max 5 attempts). `ChannelsService` still keeps its own private copy. Making it use the shared helper is a small refactor, left as a separate follow-up so as not to mix scopes.
+  - Added `src/videos/videos.constants.ts` (content-type whitelist, 10 GiB limit, `VIDEO_STORAGE_KEYS`) and response DTOs (`VideoResponseDto`, `InitiateUploadResponseDto`) for OpenAPI.
+  - A user without a channel (should not happen, since register creates one) raises a plain `Error` → 500. The plan defines no domain error for it.
+  - Added shared helpers for the next controller SIs: `src/test/e2e-app.ts` (`createE2eApp` reproduces the `main.ts` pipes and filters and exposes `resetThrottling`; `createAuthenticatedUser` inserts a confirmed user and channel, then logs in via `POST /auth/login`) and `cleanupVideoStorage(dataSource)` in `src/test/storage.ts`. The latter aborts and deletes storage under `videos/{id}/` and `thumbnails/{id}/` for every DB row, so tests don't leak multipart uploads into the shared bucket.
+  - The global `ThrottlerGuard` (10 req/min, from Phase 02) also applies to `/videos`. E2E suites reset it in `beforeEach`. Whether video routes should be throttled differently was not decided by the plan (follow-up).
+  - Updated the SI-03.3 `videos.module.spec.ts` because `VideosModule` now imports Channels, Storage and the queue, so the test needs storage/queue config plus the test Bull root.
 
 ### SI-03.6 — Retomada do upload: assinar URLs de partes e listar partes enviadas
 - **Status:** pending
