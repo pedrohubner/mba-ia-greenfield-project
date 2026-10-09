@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 1/13 completed
+**SIs:** 2/13 completed
 
 ### SI-03.1 — Infra: dependências, namespaces de config e serviços Docker
 - **Status:** completed
@@ -14,9 +14,13 @@
   - npm recorded `^3.1148.0` for the AWS SDK packages and `^6.3.12` for bullmq (latest within the planned ranges); `ioredis` resolved to `^5.11.1`.
 
 ### SI-03.2 — StorageModule: clientes S3 interno/público, multipart e pré-assinatura
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 11 passing (4 unit signing, 6 integration MinIO, 1 module compilation)
+- **Observations:**
+  - `StorageService` implements `OnModuleDestroy` to `destroy()` both S3 clients so Jest/worker shutdown releases sockets.
+  - `src/test/storage.ts` cleanup also aborts in-progress multipart uploads under the test prefix, not only finished objects.
+  - The integration spec covers `deleteObject` too (head → `NotFound`), beyond the plan's table.
+  - Out of scope: the Storage layout spec's CORS row (browser part PUTs need an allowed origin and an exposed `ETag` header) belongs to no SI's Technical actions. No frontend exists in this phase, so it's untested here. Track it as a follow-up for the frontend phase (configure CORS on the pgsty MinIO, e.g. `MINIO_API_CORS_ALLOW_ORIGIN`).
 
 ### SI-03.3 — Entidade Video, migration e gerador de public_id
 - **Status:** pending
