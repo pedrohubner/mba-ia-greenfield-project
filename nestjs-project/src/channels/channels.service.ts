@@ -7,7 +7,6 @@ const PG_UNIQUE_VIOLATION = '23505';
 const NICKNAME_COLUMN = 'nickname';
 const MAX_RETRIES = 5;
 
-// QueryFailedError copies the pg driver error fields onto itself.
 interface PgErrorFields {
   code?: string;
   detail?: string;

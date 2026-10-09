@@ -37,7 +37,6 @@ describe('Database migrations (integration)', () => {
       ),
       dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
     ]);
-    // Enum types outlive their tables; leftovers make CREATE TYPE fail on re-run.
     await dataSource.query(
       `DROP TYPE IF EXISTS "public"."verification_tokens_type_enum"`,
     );
@@ -46,7 +45,6 @@ describe('Database migrations (integration)', () => {
   afterAll(async () => {
     // The second test undoes the last migration, leaving token tables missing.
     // Re-apply so the shared DB is fully migrated when subsequent suites run.
-    // Always release the pool, otherwise a failed re-apply leaves Jest hanging.
     try {
       await dataSource.runMigrations();
     } finally {

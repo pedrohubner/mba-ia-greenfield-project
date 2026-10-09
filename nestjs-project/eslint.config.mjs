@@ -33,8 +33,6 @@ export default tseslint.config(
     },
   },
   {
-    // Passing jest.Mocked methods to expect() is safe; typescript-eslint
-    // documents unbound-method as a false positive for jest mocks in tests.
     files: ['**/*.spec.ts', '**/*.integration-spec.ts', '**/*.e2e-spec.ts'],
     rules: {
       '@typescript-eslint/unbound-method': 'off',

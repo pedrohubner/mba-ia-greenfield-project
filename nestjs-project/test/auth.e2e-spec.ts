@@ -35,12 +35,10 @@ interface MeBody {
   email: string;
 }
 
-// supertest types res.body as any; narrow it to the endpoint's response contract.
 function bodyOf<T>(res: { body: unknown }): T {
   return res.body as T;
 }
 
-// mailService is private on AuthService; spy on the real injected instance.
 function getMailService(authService: AuthService): MailService {
   return (authService as unknown as { mailService: MailService }).mailService;
 }

@@ -1,6 +1,5 @@
 const mailpitUrl = `http://${process.env.MAIL_HOST ?? 'mailpit'}:8025`;
 
-// Subset of the Mailpit API v1 payloads used by the test suites.
 export interface MailpitAddress {
   Name: string;
   Address: string;
