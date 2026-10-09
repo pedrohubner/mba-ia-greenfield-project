@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 10/13 completed
+**SIs:** 11/13 completed
 
 ### SI-03.1 — Infra: dependências, namespaces de config e serviços Docker
 - **Status:** completed
@@ -107,9 +107,14 @@
   - `tsconfig.worker.json` re-declares `exclude` (adding `dist-worker`), because `exclude` in an extending tsconfig replaces the parent's list rather than merging with it.
 
 ### SI-03.10 — Job agendado cleanup-stale-uploads: rascunhos abandonados e uploads parados
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 20 passing, no open handles, ~10 s (`stale-uploads.service.integration-spec.ts` 5 new on real DB, MinIO and Redis; `video-processing.processor.spec.ts` 10 incl. 2 new dispatch cases; SI-03.9 service integration 4 and `WorkerModule` compilation 1 as regression)
+- **Observations:**
+  - The scheduler is registered by the worker in `VideoProcessingProcessor.onApplicationBootstrap` through a new producer method, `VideoProcessingProducer.scheduleStaleUploadsCleanup()` (`upsertJobScheduler('cleanup-stale-uploads', { every: 300000 }, …)`), so all queue writes stay in the producer. Verified on the live dev worker: `getJobSchedulers()` (prefix `bull`) lists exactly one `cleanup-stale-uploads` every 300000 ms, both before and after `docker compose restart video-worker`.
+  - `WorkerModule` now imports `VideoProcessingQueueModule` (queue registration + producer) and no longer calls `BullModule.registerQueue` itself.
+  - Unknown job names now throw `Unknown job "<name>"` instead of only logging a warning, per the SI's test row. This replaced the SI-03.9 unit case, and the job fails visibly in BullMQ.
+  - `cleanupStaleDrafts` ignores `NoSuchUpload` silently. Other abort errors are logged as warnings and the row is deleted anyway (best-effort). The integration spec covers a draft whose multipart was already gone.
+  - The integration spec ages rows with `UPDATE … SET created_at/updated_at = now() - interval`. AC #4 ("ends processed") relies on the SI-03.9 worker flow already verified; the cleanup→worker path was not run end-to-end on the live dev worker.
 
 ### SI-03.12 — Streaming e download: URLs pré-assinadas de playback e download
 - **Status:** pending

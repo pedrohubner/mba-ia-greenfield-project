@@ -27,7 +27,9 @@ import { Video, VideoProcessingStatus } from '../videos/entities/video.entity';
 import { generatePublicId } from '../videos/public-id.util';
 import { VIDEO_STORAGE_KEYS } from '../videos/videos.constants';
 import { PROCESS_VIDEO_JOB } from './video-processing.constants';
+import { StaleUploadsService } from './stale-uploads.service';
 import { VideoProcessingProcessor } from './video-processing.processor';
+import { VideoProcessingProducer } from './video-processing.producer';
 import { VideoProcessingService } from './video-processing.service';
 
 const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken, Video];
@@ -66,6 +68,8 @@ describe('VideoProcessingService (integration)', () => {
     thumbnailService = module.get(ThumbnailService);
     processor = new VideoProcessingProcessor(
       service,
+      {} as StaleUploadsService,
+      {} as VideoProcessingProducer,
       module.get<ConfigType<typeof videoConfig>>(videoConfig.KEY),
     );
   }, 120000);

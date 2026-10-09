@@ -6,6 +6,8 @@ export const PROCESS_VIDEO_JOB = 'process-video';
 
 export const CLEANUP_STALE_UPLOADS_JOB = 'cleanup-stale-uploads';
 
+export const CLEANUP_STALE_UPLOADS_EVERY_MS = 300_000;
+
 export const PROCESSING_ERROR_REASON = 'PROCESSING_ERROR';
 
 export const WORKER_SOURCE_URL_TTL_SECONDS = 3600;

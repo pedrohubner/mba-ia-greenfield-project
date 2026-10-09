@@ -5,12 +5,15 @@ import { Job, UnrecoverableError } from 'bullmq';
 import videoConfig from '../config/video.config';
 import { MediaRejectedError } from '../media/media.errors';
 import {
+  CLEANUP_STALE_UPLOADS_JOB,
   PROCESS_VIDEO_JOB,
   PROCESSING_ERROR_REASON,
   VIDEO_PROCESSING_QUEUE,
   type ProcessVideoJobData,
 } from './video-processing.constants';
+import { VideoProcessingProducer } from './video-processing.producer';
 import { VideoProcessingService } from './video-processing.service';
+import { StaleUploadsService } from './stale-uploads.service';
 
 @Processor(VIDEO_PROCESSING_QUEUE)
 export class VideoProcessingProcessor
@@ -21,22 +24,27 @@ export class VideoProcessingProcessor
 
   constructor(
     private readonly videoProcessingService: VideoProcessingService,
+    private readonly staleUploadsService: StaleUploadsService,
+    private readonly videoProcessingProducer: VideoProcessingProducer,
     @Inject(videoConfig.KEY)
     private readonly video: ConfigType<typeof videoConfig>,
   ) {
     super();
   }
 
-  onApplicationBootstrap(): void {
+  async onApplicationBootstrap(): Promise<void> {
     this.worker.concurrency = this.video.workerConcurrency;
+    await this.videoProcessingProducer.scheduleStaleUploadsCleanup();
   }
 
   async process(job: Job): Promise<void> {
     switch (job.name) {
       case PROCESS_VIDEO_JOB:
         return this.processVideo(job as Job<ProcessVideoJobData>);
+      case CLEANUP_STALE_UPLOADS_JOB:
+        return this.cleanupStaleUploads();
       default:
-        this.logger.warn(`Ignoring unknown job "${job.name}" (${job.id})`);
+        throw new Error(`Unknown job "${job.name}" (${job.id})`);
     }
   }
 
@@ -60,6 +68,16 @@ export class VideoProcessingProcessor
       videoId,
       PROCESSING_ERROR_REASON,
     );
+  }
+
+  private async cleanupStaleUploads(): Promise<void> {
+    const removed = await this.staleUploadsService.cleanupStaleDrafts();
+    const requeued = await this.staleUploadsService.requeueStuckUploads();
+    if (removed > 0 || requeued > 0) {
+      this.logger.log(
+        `Stale uploads cleanup: ${removed} drafts removed, ${requeued} videos re-enqueued`,
+      );
+    }
   }
 
   private async processVideo(job: Job<ProcessVideoJobData>): Promise<void> {

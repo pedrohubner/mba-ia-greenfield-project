@@ -15,10 +15,8 @@ import { MediaModule } from '../media/media.module';
 import { StorageModule } from '../storage/storage.module';
 import { User } from '../users/entities/user.entity';
 import { Video } from '../videos/entities/video.entity';
-import {
-  VIDEO_PROCESSING_JOB_OPTIONS,
-  VIDEO_PROCESSING_QUEUE,
-} from './video-processing.constants';
+import { StaleUploadsService } from './stale-uploads.service';
+import { VideoProcessingQueueModule } from './video-processing-queue.module';
 import { VideoProcessingProcessor } from './video-processing.processor';
 import { VideoProcessingService } from './video-processing.service';
 
@@ -64,13 +62,14 @@ import { VideoProcessingService } from './video-processing.service';
         prefix: queue.prefix,
       }),
     }),
-    BullModule.registerQueue({
-      name: VIDEO_PROCESSING_QUEUE,
-      defaultJobOptions: VIDEO_PROCESSING_JOB_OPTIONS,
-    }),
+    VideoProcessingQueueModule,
     StorageModule,
     MediaModule,
   ],
-  providers: [VideoProcessingService, VideoProcessingProcessor],
+  providers: [
+    VideoProcessingService,
+    StaleUploadsService,
+    VideoProcessingProcessor,
+  ],
 })
 export class WorkerModule {}
