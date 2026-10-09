@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 12/13 completed
+**SIs:** 13/13 completed
 
 ### SI-03.1 — Infra: dependências, namespaces de config e serviços Docker
 - **Status:** completed
@@ -127,6 +127,11 @@
   - `--detectOpenHandles` reports a `CustomGC` handle from the native `@css-inline/css-inline` addon (loaded by `MailModule`'s `HandlebarsAdapter`). This predates Phase 03: it also appears on the untouched baseline `test/app.e2e-spec.ts`, and Jest still exits normally. Out of scope here (follow-up if it ever blocks Jest exit).
 
 ### SI-03.13 — Documentação: openapi.json exportado e CLAUDE.md do backend
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 7 passing (`test/swagger.e2e-spec.ts`, incl. the new check that all 8 video operations have `access-token` security and that every non-401 error response `$ref`s `ApiErrorEnvelope`); regression `src/openapi-export.integration-spec.ts` 9 passing
+- **Observations:**
+  - `npm run openapi:export` added 852 lines and removed none, so the existing auth paths are unchanged. A second export is byte-identical (`cmp`). The file has not been committed; git is left to the user.
+  - The export script runs through `ts-node`, so the `@nestjs/swagger` CLI plugin (classValidatorShim) does not apply there. Consequently validation constraints such as `minLength`/`maximum` are not in the committed `openapi.json`, as with the pre-existing auth DTOs. Descriptions and examples are present thanks to the explicit `@ApiProperty` (see SI-03.6 note). The running app (`nest build`) does include the constraints.
+  - `nestjs-project/CLAUDE.md`: services (`video-worker`, `mailpit`, `redis`, `minio`, `minio-init` with ports and credentials), readiness checks (Redis `ping` + `noeviction`, MinIO bucket via `mc ls` — command verified, `ffprobe`/`ffmpeg -version`, worker log line), `start:worker*` and `openapi:export` commands, the `test/setup-env.ts` overrides, media fixtures at test time, and the `STORAGE_PUBLIC_ENDPOINT` exception.
+  - Root `CLAUDE.md`: Message Queue → BullMQ + Redis, Object Storage → MinIO (S3 API only), `video-worker` described as the same codebase with the `src/worker.ts` entrypoint, plus a new "Video Upload and Processing Flow" section (presigned multipart → complete/enqueue → worker → playback/download).
+  - `docs/diagrams/software-arch.mermaid`: queue `"TBD"` → `"BullMQ + Redis"`; storage `"S3 or MinIO"` → `"MinIO (S3-compatible)"`. No `TBD` left in either file.
