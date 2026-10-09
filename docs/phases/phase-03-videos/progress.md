@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 2/13 completed
+**SIs:** 3/13 completed
 
 ### SI-03.1 — Infra: dependências, namespaces de config e serviços Docker
 - **Status:** completed
@@ -23,9 +23,15 @@
   - Out of scope: the Storage layout spec's CORS row (browser part PUTs need an allowed origin and an exposed `ETag` header) belongs to no SI's Technical actions. No frontend exists in this phase, so it's untested here. Track it as a follow-up for the frontend phase (configure CORS on the pgsty MinIO, e.g. `MINIO_API_CORS_ALLOW_ORIGIN`).
 
 ### SI-03.3 — Entidade Video, migration e gerador de public_id
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 22 passing (5 entity integration, 12 public-id unit, 1 module compilation, 4 migrations integration); full `npm test` 175/175
+- **Observations:**
+  - Migration generated as `1791555983193-CreateVideos.ts` and applied to the dev DB. CLI `migration:run` → `migration:revert` (table and both enum types removed) → `migration:run` all verified.
+  - Following the Data Model (the relation lives on `Video` only), `Channel` gained no inverse `@OneToMany`, even though the typeorm skill defaults to bidirectional relations.
+  - Updated `src/database/migrations.integration-spec.ts`, which hard-codes the migration list and the tables it manages, so it includes `CreateVideos`. It now also asserts the `videos` enum types and indexes, and that reverting `CreateVideos` removes the table and enum types. This test file owns the migration ACs.
+  - Fix attempt 1: that spec's `beforeAll` ran `DROP TABLE … CASCADE` concurrently via `Promise.all`. With `videos` (FK → `channels`) added, Postgres deadlocked, and the half-dropped DB broke the `afterAll` re-run. Replaced it with a single `DROP TABLE IF EXISTS a, b, … CASCADE` statement.
+  - The `bigint` → `number` transformer lives in `video.entity.ts`, as the SI specifies, not in a shared module.
+  - The entity spec cleans `videos` explicitly before `cleanAllTables`. The shared `cleanAllTables` helper was not changed because channel deletion already cascades to videos.
 
 ### SI-03.4 — Fila de processamento: conexão BullMQ e producer idempotente
 - **Status:** pending
