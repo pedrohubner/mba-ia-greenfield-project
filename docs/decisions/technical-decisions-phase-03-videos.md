@@ -52,6 +52,9 @@ _Research notes (flagged discrepancies):_
 
 **Libraries:** @nestjs/bullmq, bullmq
 
+**Revisions:**
+- 2026-10-09 — `@nestjs/bullmq` pinned to `^11.0.5` instead of `^12.0.0`. The 12.x line (and its `@nestjs/bull-shared` dependency) is published ESM-only (`"type": "module"`), and the project's Jest setup (ts-jest, CommonJS) cannot load it, so every suite importing `AppModule` failed to parse. 11.0.5 is CommonJS, peers on NestJS `^10 || ^11` and `bullmq ^3 || ^4 || ^5 || ^6`, and exposes the same API (`BullModule.forRootAsync`/`registerQueue`, `@InjectQueue`, `@Processor` + `WorkerHost`, `@OnWorkerEvent`). `bullmq` stays at `^6.3.11`. Rationale: found during `phase-03-videos` SI-03.4.
+
 ---
 
 ## TD-02: Large-File Upload Protocol (≤ 10GB, direct to storage, resumable)

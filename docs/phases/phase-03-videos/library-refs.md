@@ -1,7 +1,7 @@
 ---
 libs:
   "@nestjs/bullmq":
-    version: "^12.0.0"
+    version: "^11.0.5"
     context7_id: "/nestjs/bull"
     fetched_at: "2026-10-08T09:26:38-03:00"
   "bullmq":
@@ -28,7 +28,7 @@ Distilled from Context7 (versions checked against the npm registry on 2026-10-08
 
 _Used by `phase-03-videos/TD-01` (queue), `TD-06` (producer), `TD-07` (worker), `TD-13` (failure events)._
 
-- **Compatibility:** `12.0.0` peers on `@nestjs/common|core ^10 || ^11 || ^12` and `bullmq ^3 || ^4 || ^5 || ^6`, so it works with the installed NestJS 11.
+- **Compatibility:** pinned to `^11.0.5` (per `phase-03-videos/TD-01` revision 2026-10-09). `12.0.0` peers on NestJS 11 too, but it is ESM-only (`"type": "module"`) and the project's ts-jest (CommonJS) cannot load it. `11.0.5` is CommonJS and peers on `@nestjs/common|core ^10 || ^11` and `bullmq ^3 || ^4 || ^5 || ^6`.
 - **Root connection:** `BullModule.forRootAsync({ imports, inject, useFactory })` registers a **global** shared config (`connection`, `defaultJobOptions`, …). This fits the inherited convention: inject a `registerAs` namespace (e.g., `queueConfig.KEY`) instead of hard-coding the host. The host is the Compose service name (`redis`), never `localhost`.
 - **Queue registration:** `BullModule.registerQueue({ name, defaultJobOptions })` in the feature module. Per-queue options are merged over the shared config. Each queue provider closes itself on `onApplicationShutdown`.
 - **Producer side (API):** inject with `@InjectQueue('<name>') queue: Queue` (type from `bullmq`), or `moduleRef.get(getQueueToken('<name>'))`. The API only registers the queue. It must **not** import the processor class.

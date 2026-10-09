@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 3/13 completed
+**SIs:** 4/13 completed
 
 ### SI-03.1 — Infra: dependências, namespaces de config e serviços Docker
 - **Status:** completed
@@ -34,9 +34,12 @@
   - The entity spec cleans `videos` explicitly before `cleanAllTables`. The shared `cleanAllTables` helper was not changed because channel deletion already cascades to videos.
 
 ### SI-03.4 — Fila de processamento: conexão BullMQ e producer idempotente
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 4 passing (3 producer integration on real Redis, 1 module compilation), no open handles; e2e regression 52/52 with `AppModule` now registering `BullModule.forRootAsync`
+- **Observations:**
+  - **Library version:** `@nestjs/bullmq@12.0.0` (the version TD-01 pinned) is ESM-only (`"type": "module"`, and so is `@nestjs/bull-shared` 12). The project's ts-jest (CommonJS) could not parse it, so the first run failed to load every suite importing `AppModule`, including all e2e suites. By user decision it is now pinned to `^11.0.5` (CommonJS, peers NestJS `^11` and `bullmq ^6`, same API). Recorded as a Revision on TD-01, and `library-refs.md` was updated (`^11.0.5` plus the compatibility note).
+  - Added `src/test/queue.ts` (test `BullModule.forRoot` with the `bull-test` prefix and the Compose Redis connection) for reuse by the worker SIs.
+  - The producer integration spec runs `queue.obliterate({ force: true })` before each test and in `afterAll`. It only touches the `bull-test` prefix, never the dev `bull` keys, and the spec asserts that isolation.
 
 ### SI-03.8 — MediaModule: ffprobe, validação de formato e extração de thumbnail
 - **Status:** pending
