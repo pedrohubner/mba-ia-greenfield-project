@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 6/13 completed
+**SIs:** 7/13 completed
 
 ### SI-03.1 — Infra: dependências, namespaces de config e serviços Docker
 - **Status:** completed
@@ -65,9 +65,15 @@
   - Updated the SI-03.3 `videos.module.spec.ts` because `VideosModule` now imports Channels, Storage and the queue, so the test needs storage/queue config plus the test Bull root.
 
 ### SI-03.6 — Retomada do upload: assinar URLs de partes e listar partes enviadas
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 26 passing — set A 19 (`videos.service.spec.ts` 17 incl. 10 new for `findOwnedOrFail`/`assertPendingUpload`/`signPartUrls`; `videos.service.integration-spec.ts` 2 incl. the new resume flow on real MinIO); set B 7 (spec-derived `test/videos-upload-parts.e2e-spec.ts`)
+- **Observations:**
+  - `findOwnedOrFail` resolves ownership in one query (`where: { public_id, channel: { user_id } }`). A malformed id, a missing id and a foreign video all throw the same `VideoNotFoundException`, and the E2E asserts the bodies are identical.
+  - `assertPendingUpload` also rejects a `pending_upload` row whose `upload_id` is null (defensive: it cannot be signed or listed), with `INVALID_UPLOAD_STATE`.
+  - `expires_at` is computed before signing, so it never runs later than the actual URL expiry.
+  - Added response DTOs (`SignPartUrlsResponseDto`, `UploadedPartsResponseDto`) and a private `partCount()` helper, now also used by `initiateUpload`.
+  - Per user instruction (2026-10-09), spec-derived E2E files carry no comments at all, including no group-heading comments. The user removed the group comments from `test/videos-create.e2e-spec.ts` themselves.
+  - Pending user decision: `src/videos/dto/create-video.dto.ts` (SI-03.5) still has `/** … */` JSDoc blocks that feed Swagger descriptions. I offered to move them into `@ApiProperty({ description, example })`; not done yet.
 
 ### SI-03.7 — Conclusão e cancelamento do upload
 - **Status:** pending

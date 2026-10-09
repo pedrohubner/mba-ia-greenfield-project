@@ -4,8 +4,13 @@ import { QueryFailedError } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
 import storageConfig from '../config/storage.config';
 import { StorageService } from '../storage/storage.service';
-import { Video } from './entities/video.entity';
-import { UnsupportedMediaTypeException } from './exceptions/video.exceptions';
+import { Video, VideoProcessingStatus } from './entities/video.entity';
+import {
+  InvalidUploadPartsException,
+  InvalidUploadStateException,
+  UnsupportedMediaTypeException,
+  VideoNotFoundException,
+} from './exceptions/video.exceptions';
 import { VideosService } from './videos.service';
 
 const PART_SIZE = 5 * 1024 * 1024;
@@ -23,11 +28,16 @@ function uniqueViolation(column: string): QueryFailedError {
 
 describe('VideosService', () => {
   let service: VideosService;
-  let videoRepository: { create: jest.Mock; save: jest.Mock };
+  let videoRepository: {
+    create: jest.Mock;
+    save: jest.Mock;
+    findOne: jest.Mock;
+  };
   let storageService: {
     createMultipartUpload: jest.Mock;
     abortMultipartUpload: jest.Mock;
     signGetObjectUrl: jest.Mock;
+    signUploadPartUrl: jest.Mock;
   };
   let channelsService: { findByUserId: jest.Mock };
 
@@ -56,11 +66,16 @@ describe('VideosService', () => {
           updated_at: new Date(),
         }),
       ),
+      findOne: jest.fn(),
     };
     storageService = {
       createMultipartUpload: jest.fn().mockResolvedValue('upload-1'),
       abortMultipartUpload: jest.fn().mockResolvedValue(undefined),
       signGetObjectUrl: jest.fn(),
+      signUploadPartUrl: jest.fn(
+        (key: string, uploadId: string, partNumber: number) =>
+          Promise.resolve(`https://storage.test/${key}?part=${partNumber}`),
+      ),
     };
     channelsService = {
       findByUserId: jest.fn().mockResolvedValue({ id: CHANNEL_ID }),
@@ -74,7 +89,11 @@ describe('VideosService', () => {
         { provide: ChannelsService, useValue: channelsService },
         {
           provide: storageConfig.KEY,
-          useValue: { partSizeBytes: PART_SIZE, thumbnailUrlTtlSeconds: 3600 },
+          useValue: {
+            partSizeBytes: PART_SIZE,
+            thumbnailUrlTtlSeconds: 3600,
+            partUrlTtlSeconds: 3600,
+          },
         },
       ],
     }).compile();
@@ -164,5 +183,96 @@ describe('VideosService', () => {
       expect(video).not.toHaveProperty(key);
     }
     expect(video.thumbnail_url).toBeNull();
+  });
+
+  describe('findOwnedOrFail', () => {
+    it('should reject a malformed publicId without querying the database', async () => {
+      await expect(
+        service.findOwnedOrFail(USER_ID, 'not-a-valid-id'),
+      ).rejects.toThrow(VideoNotFoundException);
+
+      expect(videoRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it("should throw the same VideoNotFoundException for missing and other users' videos", async () => {
+      videoRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.findOwnedOrFail(USER_ID, 'AAAAAAAAAAA'),
+      ).rejects.toThrow(VideoNotFoundException);
+    });
+
+    it('should scope the lookup to the caller through the channel owner', async () => {
+      videoRepository.findOne.mockResolvedValue({ id: 'video-1' });
+
+      await service.findOwnedOrFail(USER_ID, 'AAAAAAAAAAA');
+
+      expect(videoRepository.findOne).toHaveBeenCalledWith({
+        where: { public_id: 'AAAAAAAAAAA', channel: { user_id: USER_ID } },
+      });
+    });
+  });
+
+  describe('assertPendingUpload', () => {
+    it.each([
+      VideoProcessingStatus.UPLOADED,
+      VideoProcessingStatus.PROCESSING,
+      VideoProcessingStatus.READY,
+      VideoProcessingStatus.FAILED,
+    ])('should reject a video in %s', (status) => {
+      expect(() =>
+        service.assertPendingUpload({
+          processing_status: status,
+          upload_id: 'upload-1',
+        } as Video),
+      ).toThrow(InvalidUploadStateException);
+    });
+
+    it('should accept a pending upload with an open multipart upload', () => {
+      expect(() =>
+        service.assertPendingUpload({
+          processing_status: VideoProcessingStatus.PENDING_UPLOAD,
+          upload_id: 'upload-1',
+        } as Video),
+      ).not.toThrow();
+    });
+  });
+
+  describe('signPartUrls', () => {
+    const pendingVideo = {
+      object_key: 'videos/v1/original.mp4',
+      upload_id: 'upload-1',
+      size_bytes: 3 * PART_SIZE,
+      processing_status: VideoProcessingStatus.PENDING_UPLOAD,
+    };
+
+    beforeEach(() => {
+      videoRepository.findOne.mockResolvedValue(pendingVideo);
+    });
+
+    it('should reject a part number above part_count', async () => {
+      await expect(
+        service.signPartUrls(USER_ID, 'AAAAAAAAAAA', [1, 4]),
+      ).rejects.toThrow(InvalidUploadPartsException);
+
+      expect(storageService.signUploadPartUrl).not.toHaveBeenCalled();
+    });
+
+    it('should sign every requested part and expire after the configured TTL', async () => {
+      const before = Date.now();
+
+      const result = await service.signPartUrls(USER_ID, 'AAAAAAAAAAA', [1, 3]);
+
+      expect(result.parts.map((part) => part.part_number)).toEqual([1, 3]);
+      expect(storageService.signUploadPartUrl).toHaveBeenCalledWith(
+        'videos/v1/original.mp4',
+        'upload-1',
+        3,
+        3600,
+      );
+      const expiresAt = new Date(result.expires_at).getTime();
+      expect(expiresAt).toBeGreaterThanOrEqual(before + 3600 * 1000);
+      expect(expiresAt).toBeLessThanOrEqual(Date.now() + 3600 * 1000);
+    });
   });
 });

@@ -96,4 +96,60 @@ describe('VideosService (integration)', () => {
       storageService.listParts(row.object_key, row.upload_id!),
     ).resolves.toEqual([]);
   });
+
+  it('should sign part URLs, list only the uploaded parts and re-sign the missing one', async () => {
+    const { user } = await createUserWithChannel();
+    const partSize = 5 * 1024 * 1024;
+    const { video } = await videosService.initiateUpload(user.id, {
+      filename: 'retomada.mp4',
+      size_bytes: 3 * partSize,
+      content_type: 'video/mp4',
+    });
+
+    const signed = await videosService.signPartUrls(
+      user.id,
+      video.public_id,
+      [1, 2, 3],
+    );
+    const etags: string[] = [];
+    for (const part of signed.parts.slice(0, 2)) {
+      const response = await fetch(part.url, {
+        method: 'PUT',
+        body: new Uint8Array(Buffer.alloc(partSize, part.part_number)),
+      });
+      expect(response.status).toBe(200);
+      etags.push(response.headers.get('etag')!);
+    }
+
+    const uploaded = await videosService.listUploadedParts(
+      user.id,
+      video.public_id,
+    );
+    expect(uploaded).toEqual({
+      part_size: partSize,
+      part_count: 3,
+      parts: [
+        { part_number: 1, etag: etags[0], size: partSize },
+        { part_number: 2, etag: etags[1], size: partSize },
+      ],
+    });
+
+    const missing = await videosService.signPartUrls(
+      user.id,
+      video.public_id,
+      [3],
+    );
+    const response = await fetch(missing.parts[0].url, {
+      method: 'PUT',
+      body: new Uint8Array(Buffer.alloc(1024, 3)),
+    });
+    expect(response.status).toBe(200);
+    const afterResume = await videosService.listUploadedParts(
+      user.id,
+      video.public_id,
+    );
+    expect(afterResume.parts.map((part) => part.part_number)).toEqual([
+      1, 2, 3,
+    ]);
+  });
 });
