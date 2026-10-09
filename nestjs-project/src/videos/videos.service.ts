@@ -6,7 +6,10 @@ import { Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
 import { isPgUniqueViolationOnColumn } from '../common/database/pg-errors';
 import storageConfig from '../config/storage.config';
+import { S3ServiceException } from '@aws-sdk/client-s3';
 import { StorageService } from '../storage/storage.service';
+import { VideoProcessingProducer } from '../video-processing/video-processing.producer';
+import { UploadedPartDto } from './dto/complete-upload.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
 import {
   InitiateUploadResponseDto,
@@ -21,6 +24,7 @@ import {
   InvalidUploadPartsException,
   InvalidUploadStateException,
   UnsupportedMediaTypeException,
+  UploadSizeExceededException,
   VideoNotFoundException,
 } from './exceptions/video.exceptions';
 import { generatePublicId, isValidPublicId } from './public-id.util';
@@ -28,6 +32,8 @@ import { presentVideo } from './video.presenter';
 import { deriveVideoTitle, fileExtension } from './video-title.util';
 import {
   ALLOWED_VIDEO_CONTENT_TYPES,
+  INVALID_PARTS_STORAGE_ERRORS,
+  MAX_VIDEO_SIZE_BYTES,
   PUBLIC_ID_MAX_ATTEMPTS,
   VIDEO_STORAGE_KEYS,
 } from './videos.constants';
@@ -41,6 +47,7 @@ export class VideosService {
     private readonly videoRepository: Repository<Video>,
     private readonly channelsService: ChannelsService,
     private readonly storageService: StorageService,
+    private readonly videoProcessingProducer: VideoProcessingProducer,
     @Inject(storageConfig.KEY)
     private readonly storage: ConfigType<typeof storageConfig>,
   ) {}
@@ -151,6 +158,50 @@ export class VideosService {
     };
   }
 
+  async completeUpload(
+    userId: string,
+    publicId: string,
+    parts: UploadedPartDto[],
+  ): Promise<VideoResponseDto> {
+    const video = await this.findOwnedOrFail(userId, publicId);
+
+    if (video.processing_status === VideoProcessingStatus.UPLOADED) {
+      await this.videoProcessingProducer.enqueueProcessing(video.id);
+      return this.present(video);
+    }
+    this.assertPendingUpload(video);
+
+    await this.completeInStorage(video, parts);
+
+    const { contentLength } = await this.storageService.headObject(
+      video.object_key,
+    );
+    if (contentLength > MAX_VIDEO_SIZE_BYTES) {
+      await this.storageService.deleteObject(video.object_key);
+      await this.videoRepository.delete({ id: video.id });
+      throw new UploadSizeExceededException();
+    }
+
+    video.size_bytes = contentLength;
+    video.upload_id = null;
+    video.processing_status = VideoProcessingStatus.UPLOADED;
+    const saved = await this.videoRepository.save(video);
+    await this.videoProcessingProducer.enqueueProcessing(saved.id);
+
+    return this.present(saved);
+  }
+
+  async abortUpload(userId: string, publicId: string): Promise<void> {
+    const video = await this.findOwnedOrFail(userId, publicId);
+    this.assertPendingUpload(video);
+
+    await this.storageService.abortMultipartUpload(
+      video.object_key,
+      video.upload_id!,
+    );
+    await this.videoRepository.delete({ id: video.id });
+  }
+
   async findOwnedOrFail(userId: string, publicId: string): Promise<Video> {
     if (!isValidPublicId(publicId)) {
       throw new VideoNotFoundException();
@@ -187,6 +238,30 @@ export class VideosService {
       this.storageService,
       this.storage.thumbnailUrlTtlSeconds,
     );
+  }
+
+  private async completeInStorage(
+    video: Video,
+    parts: UploadedPartDto[],
+  ): Promise<void> {
+    try {
+      await this.storageService.completeMultipartUpload(
+        video.object_key,
+        video.upload_id!,
+        parts.map((part) => ({
+          partNumber: part.part_number,
+          etag: part.etag,
+        })),
+      );
+    } catch (err) {
+      if (
+        err instanceof S3ServiceException &&
+        (INVALID_PARTS_STORAGE_ERRORS as readonly string[]).includes(err.name)
+      ) {
+        throw new InvalidUploadPartsException();
+      }
+      throw err;
+    }
   }
 
   private partCount(sizeBytes: number): number {

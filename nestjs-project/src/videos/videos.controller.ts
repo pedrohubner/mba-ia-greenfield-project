@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -18,6 +19,7 @@ import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
+import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { SignPartUrlsDto } from './dto/sign-part-urls.dto';
 import {
   SignPartUrlsResponseDto,
@@ -159,5 +161,73 @@ export class VideosController {
     @Param('publicId') publicId: string,
   ): Promise<VideoResponseDto> {
     return this.videosService.getOwnedVideo(user.sub, publicId);
+  }
+
+  @Post(':publicId/upload/complete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Complete a video upload',
+    description:
+      'Completes the multipart upload, validates the stored object, moves the video to `uploaded` and enqueues processing. Repeating it on an `uploaded` video only re-enqueues (deduplicated) and returns 200.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Upload completed; video is uploaded',
+    type: VideoResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation failed',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid access token' })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or not owned by the caller (VIDEO_NOT_FOUND)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is processing, ready or failed (INVALID_UPLOAD_STATE)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 422,
+    description:
+      'Storage rejected the parts (INVALID_UPLOAD_PARTS) or the object exceeds 10 GiB (UPLOAD_SIZE_EXCEEDED)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async completeUpload(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+    @Body() dto: CompleteUploadDto,
+  ): Promise<VideoResponseDto> {
+    return this.videosService.completeUpload(user.sub, publicId, dto.parts);
+  }
+
+  @Delete(':publicId/upload')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Abort a video upload',
+    description:
+      'Aborts the in-progress multipart upload and deletes the draft video.',
+  })
+  @ApiResponse({ status: 204, description: 'Upload aborted; draft deleted' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid access token' })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or not owned by the caller (VIDEO_NOT_FOUND)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Upload is not pending (INVALID_UPLOAD_STATE)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async abortUpload(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+  ): Promise<void> {
+    await this.videosService.abortUpload(user.sub, publicId);
   }
 }

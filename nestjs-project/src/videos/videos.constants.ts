@@ -8,6 +8,12 @@ export const VIDEO_FILENAME_MAX_LENGTH = 255;
 
 export const PUBLIC_ID_MAX_ATTEMPTS = 5;
 
+export const INVALID_PARTS_STORAGE_ERRORS = [
+  'InvalidPart',
+  'InvalidPartOrder',
+  'EntityTooSmall',
+] as const;
+
 export const VIDEO_STORAGE_KEYS = {
   original: (videoId: string, extension: string) =>
     `videos/${videoId}/original.${extension}`,
