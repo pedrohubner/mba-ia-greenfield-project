@@ -135,6 +135,9 @@ _Research notes (flagged discrepancies):_
 
 **Decision:** A (Single private bucket, prefixes per asset type, keys by video UUID)
 
+**Revisions:**
+- 2026-10-09 — Storage container images: the official `minio/minio` and `minio/mc` images no longer pull (Docker Hub and quay.io deny access) after MinIO CE reached end-of-life upstream. Compose uses the maintained community fork `pgsty/minio:RELEASE.2026-08-04T00-00-00Z` and `pgsty/mc:RELEASE.2026-09-16T00-00-00Z`, a drop-in build of the same MinIO binary (same S3 API, CLI and healthcheck). Layout, bucket and access policy are unchanged. Rationale: found during `phase-03-videos` SI-03.1.
+
 ---
 
 ## TD-05: Presigned URL Host Under Docker Networking
