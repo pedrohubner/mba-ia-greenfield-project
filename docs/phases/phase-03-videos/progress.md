@@ -73,7 +73,7 @@
   - `expires_at` is computed before signing, so it never runs later than the actual URL expiry.
   - Added response DTOs (`SignPartUrlsResponseDto`, `UploadedPartsResponseDto`) and a private `partCount()` helper, now also used by `initiateUpload`.
   - Per user instruction (2026-10-09), spec-derived E2E files carry no comments at all, including no group-heading comments. The user removed the group comments from `test/videos-create.e2e-spec.ts` themselves.
-  - Pending user decision: `src/videos/dto/create-video.dto.ts` (SI-03.5) still has `/** … */` JSDoc blocks that feed Swagger descriptions. I offered to move them into `@ApiProperty({ description, example })`; not done yet.
+  - Per user request, moved the `/** … */` JSDoc blocks of `src/videos/dto/create-video.dto.ts` (SI-03.5) into `@ApiProperty({ description, example })`, following `api-error-envelope.dto.ts`. It was the only new DTO with JSDoc. Verified by exporting OpenAPI from the compiled `dist/` (the swagger CLI plugin runs only in `nest build`) before and after: the documents are deep-equal (only key order changed), and all four field descriptions and examples are kept. `swagger` + `videos-create` e2e: 11/11.
 
 ### SI-03.7 — Conclusão e cancelamento do upload
 - **Status:** pending
