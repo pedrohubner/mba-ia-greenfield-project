@@ -13,6 +13,10 @@ docker compose ps   # all services must show status "running"
 Then verify each infrastructure service is actually ready to accept connections — not just running:
 
 - **PostgreSQL:** `docker compose exec db pg_isready -U streamtube` — expect `accepting connections`
+- **Redis:** `docker compose exec redis redis-cli ping` — expect `PONG` (and `redis-cli CONFIG GET maxmemory-policy` → `noeviction`, required by BullMQ)
+- **MinIO:** `docker compose ps minio` shows `healthy` and `minio-init` exited with code 0; the bucket exists: `docker compose run --rm --entrypoint sh minio-init -c 'mc alias set local http://minio:9000 streamtube streamtube-secret >/dev/null && mc ls local'` lists `streamtube-media/`
+- **FFmpeg:** `docker compose exec nestjs-api ffprobe -version` and `ffmpeg -version` succeed
+- **Video worker:** `docker compose logs video-worker` shows `WorkerModule dependencies initialized` (the worker runs `npm run start:worker:dev` on its own; it is part of the infrastructure, not the API server)
 
 Only start the NestJS dev server (`npm run start:dev`) when the user **explicitly** asks to run the application — never as part of "start the environment".
 
@@ -33,7 +37,12 @@ docker compose exec nestjs-api npm run start:dev
 
 Services:
 - `nestjs-api` — NestJS API, port `3000`
+- `video-worker` — same image and code as `nestjs-api`, runs the BullMQ consumer (`src/worker.ts`, `npm run start:worker:dev`); no HTTP port
 - `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`
+- `mailpit` — SMTP `1025`, web UI `8025`
+- `redis` — Redis 7 for BullMQ, port `6379`, `maxmemory-policy noeviction`
+- `minio` — object storage (S3 API), port `9000`, console `9001`, credentials `streamtube` / `streamtube-secret`; image `pgsty/minio` (community fork — the official MinIO images no longer pull, see TD-04 revision)
+- `minio-init` — one-shot `mc` job that creates the `streamtube-media` bucket, then exits with code 0
 
 All verification and teardown commands run on the **host machine**:
 
@@ -62,11 +71,14 @@ docker compose down
 npm run start:dev                        # Dev server with hot-reload
 npm run build                            # Compile to dist/
 npm run start:prod                       # Run compiled build
+npm run start:worker:dev                 # Video worker in watch mode (outputs to dist-worker/; the video-worker container already runs it)
+npm run start:worker                     # Video worker from the production build (dist/worker.js)
+npm run openapi:export                   # Regenerate openapi.json (commit the result)
 
-npm test                                 # Unit tests
+npm test                                 # Unit + integration tests (--runInBand)
 npm run test:watch                       # Unit tests in watch mode
-npm run test:cov                         # Coverage report
-npm run test:e2e                         # End-to-end tests (always with --runInBand)
+npm run test:cov                         # Coverage report (--runInBand)
+npm run test:e2e                         # End-to-end tests (--runInBand)
 
 npx tsc --noEmit                         # Type-check (required before declaring a task done)
 npm run lint                             # ESLint with auto-fix
@@ -79,16 +91,18 @@ npm run format                           # Prettier formatting
 docker compose ps
 docker compose logs nestjs-api
 docker compose exec db pg_isready -U streamtube
+docker compose exec redis redis-cli ping
+docker compose logs video-worker
 curl http://localhost:3000
 ```
 
 ### Test execution
 
-Integration and e2e suites share a single test database. They **must** be run with `--runInBand`:
+Integration and e2e suites share a single test database. They **must** be run with `--runInBand` — the `test`, `test:cov`, `test:integration` and `test:e2e` scripts already pass it:
 
 ```bash
-docker compose exec nestjs-api npm test -- --runInBand
-docker compose exec nestjs-api npm run test:e2e   # already configured
+docker compose exec nestjs-api npm test
+docker compose exec nestjs-api npm run test:e2e
 ```
 
 Parallel execution causes FK violations, deadlocks, and cross-suite contamination because suites truncate or seed shared tables concurrently.
@@ -124,7 +138,17 @@ These settings are required in `package.json` (jest config) and `test/jest-e2e.j
 
 Do not add new test-file suffixes; if a new test type is needed, update the regex deliberately.
 
+`test/setup-env.ts` runs right after `dotenv/config` in both configs (`<rootDir>/../test/setup-env.ts` in `package.json`, `<rootDir>/setup-env.ts` in `test/jest-e2e.json`) and overrides, for every suite:
+
+- `QUEUE_PREFIX=bull-test` — test jobs live under their own Redis prefix, so the `video-worker` container (dev prefix `bull`) never consumes them; suites that touch the queue `obliterate` it.
+- `STORAGE_PART_SIZE_BYTES=5242880` — real multipart uploads with small fixtures.
+- `STORAGE_PUBLIC_ENDPOINT = STORAGE_ENDPOINT` — presigned URLs are fetched from inside the container during tests.
+
+Media fixtures are generated at test time with `ffmpeg -f lavfi` (`src/test/media-fixtures.ts`); no binary fixtures are committed.
+
 ## Environment File Conventions
+
+`STORAGE_PUBLIC_ENDPOINT=http://localhost:9000` is the **only deliberate exception** to the Compose service-name rule: presigned URLs are signed against it and consumed by the browser on the host, and the host is part of the SigV4 signature, so it cannot be rewritten afterwards. Every real storage call uses `STORAGE_ENDPOINT=http://minio:9000`.
 
 `.env` is parsed by both Docker Compose and `dotenv` — values containing shell-special characters (`<`, `>`, `|`, `&`, spaces) **must be quoted** or rewritten:
 

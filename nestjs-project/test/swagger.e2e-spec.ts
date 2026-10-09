@@ -8,6 +8,25 @@ import { DomainExceptionFilter } from '../src/common/filters/domain-exception.fi
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
 import { buildSwaggerConfig } from '../src/swagger/swagger-document';
 
+interface OperationObject {
+  security?: unknown;
+  responses: Record<
+    string,
+    { content?: Record<string, { schema?: { $ref?: string } }> }
+  >;
+}
+
+const VIDEO_OPERATIONS: [string, string][] = [
+  ['/videos', 'post'],
+  ['/videos/{publicId}/upload/part-urls', 'post'],
+  ['/videos/{publicId}/upload/parts', 'get'],
+  ['/videos/{publicId}/upload/complete', 'post'],
+  ['/videos/{publicId}/upload', 'delete'],
+  ['/videos/{publicId}', 'get'],
+  ['/videos/{publicId}/playback', 'get'],
+  ['/videos/{publicId}/download', 'get'],
+];
+
 async function createApp(withSwagger: boolean): Promise<INestApplication<App>> {
   const moduleFixture = await Test.createTestingModule({
     imports: [AppModule],
@@ -77,6 +96,30 @@ describe('Swagger endpoints (e2e)', () => {
       ).toMatchObject({
         'access-token': { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
       });
+    });
+
+    it('GET /api/docs-json documents every video endpoint with error envelopes', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/docs-json')
+        .expect(200);
+      const paths = (res.body as { paths: Record<string, unknown> })
+        .paths as Record<string, Record<string, OperationObject>>;
+
+      for (const [path, method] of VIDEO_OPERATIONS) {
+        const operation = paths[path]?.[method];
+        expect(operation).toBeDefined();
+        expect(operation.security).toEqual([{ 'access-token': [] }]);
+
+        const errorResponses = Object.entries(operation.responses).filter(
+          ([status]) => Number(status) >= 400 && status !== '401',
+        );
+        expect(errorResponses.length).toBeGreaterThan(0);
+        for (const [, response] of errorResponses) {
+          expect(response.content?.['application/json']?.schema?.$ref).toBe(
+            '#/components/schemas/ApiErrorEnvelope',
+          );
+        }
+      }
     });
 
     it('GET /api/docs-yaml returns 200 with YAML content', async () => {

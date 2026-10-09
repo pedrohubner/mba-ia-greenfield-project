@@ -21,4 +21,24 @@ export const envValidationSchema = Joi.object({
   MAIL_PORT: Joi.number().default(1025),
   MAIL_FROM: Joi.string().default('"StreamTube" <noreply@streamtube.com>'),
   SWAGGER_ENABLED: Joi.string().valid('true', 'false').default('false'),
+  STORAGE_ENDPOINT: Joi.string().uri().default('http://minio:9000'),
+  STORAGE_PUBLIC_ENDPOINT: Joi.string().uri().default('http://localhost:9000'),
+  STORAGE_REGION: Joi.string().default('us-east-1'),
+  STORAGE_ACCESS_KEY: Joi.string().required(),
+  STORAGE_SECRET_KEY: Joi.string().required(),
+  STORAGE_BUCKET: Joi.string().default('streamtube-media'),
+  STORAGE_PART_SIZE_BYTES: Joi.number()
+    .integer()
+    .min(5242880)
+    .default(67108864),
+  STORAGE_PART_URL_TTL_SECONDS: Joi.number().integer().positive().default(3600),
+  PLAYBACK_URL_TTL_SECONDS: Joi.number().integer().positive().default(21600),
+  DOWNLOAD_URL_TTL_SECONDS: Joi.number().integer().positive().default(900),
+  THUMBNAIL_URL_TTL_SECONDS: Joi.number().integer().positive().default(3600),
+  REDIS_HOST: Joi.string().default('redis'),
+  REDIS_PORT: Joi.number().port().default(6379),
+  QUEUE_PREFIX: Joi.string().default('bull'),
+  VIDEO_WORKER_CONCURRENCY: Joi.number().integer().positive().default(1),
+  STALE_UPLOAD_TTL_HOURS: Joi.number().integer().positive().default(24),
+  STALE_UPLOADED_REQUEUE_MINUTES: Joi.number().integer().positive().default(15),
 });

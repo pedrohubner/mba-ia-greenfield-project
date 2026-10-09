@@ -1,4 +1,9 @@
+import type { ValidationError } from 'joi';
 import { envValidationSchema } from './env.validation';
+
+interface ValidatedEnv {
+  SWAGGER_ENABLED: string;
+}
 
 const requiredEnv = {
   DB_USERNAME: 'user',
@@ -6,9 +11,13 @@ const requiredEnv = {
   DB_NAME: 'db',
   JWT_SECRET: 'secret',
   JWT_REFRESH_SECRET: 'refresh-secret',
+  STORAGE_ACCESS_KEY: 'access-key',
+  STORAGE_SECRET_KEY: 'secret-key',
 };
 
-const validate = (env: Record<string, string>) =>
+const validate = (
+  env: Record<string, string>,
+): { value: ValidatedEnv; error?: ValidationError } =>
   envValidationSchema.validate(
     { ...requiredEnv, ...env },
     { allowUnknown: true, abortEarly: false },
