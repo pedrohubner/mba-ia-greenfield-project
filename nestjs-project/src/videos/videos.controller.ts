@@ -20,6 +20,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
 import { CompleteUploadDto } from './dto/complete-upload.dto';
+import { PresignedUrlResponseDto } from './dto/presigned-url-response.dto';
 import { SignPartUrlsDto } from './dto/sign-part-urls.dto';
 import {
   SignPartUrlsResponseDto,
@@ -229,5 +230,63 @@ export class VideosController {
     @Param('publicId') publicId: string,
   ): Promise<void> {
     await this.videosService.abortUpload(user.sub, publicId);
+  }
+
+  @Get(':publicId/playback')
+  @ApiOperation({
+    summary: 'Get a playback URL',
+    description:
+      'Returns a long-lived presigned URL for streaming the ready video; storage serves Range requests with 206 Partial Content.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Playback URL',
+    type: PresignedUrlResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid access token' })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or not owned by the caller (VIDEO_NOT_FOUND)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not ready yet (VIDEO_NOT_READY)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async getPlaybackUrl(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+  ): Promise<PresignedUrlResponseDto> {
+    return this.videosService.getPlaybackUrl(user.sub, publicId);
+  }
+
+  @Get(':publicId/download')
+  @ApiOperation({
+    summary: 'Get a download URL',
+    description:
+      'Returns a short-lived presigned URL that downloads the ready video as an attachment named after its title.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Download URL',
+    type: PresignedUrlResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid access token' })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or not owned by the caller (VIDEO_NOT_FOUND)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not ready yet (VIDEO_NOT_READY)',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async getDownloadUrl(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+  ): Promise<PresignedUrlResponseDto> {
+    return this.videosService.getDownloadUrl(user.sub, publicId);
   }
 }

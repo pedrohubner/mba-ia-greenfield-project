@@ -82,3 +82,35 @@ export async function createMediaFixtures(): Promise<MediaFixtures> {
 
   return fixtures;
 }
+
+export interface MultipartMp4Fixture {
+  path: string;
+  cleanup: () => Promise<void>;
+}
+
+export async function createMultipartMp4Fixture(): Promise<MultipartMp4Fixture> {
+  const dir = await mkdtemp(join(tmpdir(), 'streamtube-multipart-'));
+  const path = join(dir, 'multipart.mp4');
+  await ffmpeg([
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc=duration=4:size=1280x720:rate=25',
+    '-vf',
+    'noise=alls=40:allf=t',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-pix_fmt',
+    'yuv420p',
+    '-b:v',
+    '16M',
+    '-maxrate',
+    '16M',
+    '-bufsize',
+    '16M',
+    path,
+  ]);
+  return { path, cleanup: () => rm(dir, { recursive: true, force: true }) };
+}

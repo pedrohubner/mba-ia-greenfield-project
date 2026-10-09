@@ -13,6 +13,7 @@ import {
   UnsupportedMediaTypeException,
   UploadSizeExceededException,
   VideoNotFoundException,
+  VideoNotReadyException,
 } from './exceptions/video.exceptions';
 import { VideosService } from './videos.service';
 
@@ -107,6 +108,8 @@ describe('VideosService', () => {
             partSizeBytes: PART_SIZE,
             thumbnailUrlTtlSeconds: 3600,
             partUrlTtlSeconds: 3600,
+            playbackUrlTtlSeconds: 21600,
+            downloadUrlTtlSeconds: 900,
           },
         },
       ],
@@ -421,6 +424,82 @@ describe('VideosService', () => {
       expect(savedVideo(0).processing_status).toBe(
         VideoProcessingStatus.UPLOADED,
       );
+    });
+  });
+
+  describe('getPlaybackUrl / getDownloadUrl', () => {
+    const readyVideo = {
+      id: 'video-1',
+      title: 'Aula de Programação',
+      original_filename: 'aula.WEBM',
+      object_key: 'videos/video-1/original.webm',
+      processing_status: VideoProcessingStatus.READY,
+    };
+
+    beforeEach(() => {
+      videoRepository.findOne.mockResolvedValue(readyVideo);
+      storageService.signGetObjectUrl.mockResolvedValue('https://signed');
+    });
+
+    it.each([
+      VideoProcessingStatus.PENDING_UPLOAD,
+      VideoProcessingStatus.UPLOADED,
+      VideoProcessingStatus.PROCESSING,
+      VideoProcessingStatus.FAILED,
+    ])(
+      'should reject a video in %s with VideoNotReadyException',
+      async (status) => {
+        videoRepository.findOne.mockResolvedValue({
+          ...readyVideo,
+          processing_status: status,
+        });
+
+        await expect(
+          service.getPlaybackUrl(USER_ID, 'AAAAAAAAAAA'),
+        ).rejects.toThrow(VideoNotReadyException);
+        await expect(
+          service.getDownloadUrl(USER_ID, 'AAAAAAAAAAA'),
+        ).rejects.toThrow(VideoNotReadyException);
+        expect(storageService.signGetObjectUrl).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should sign playback URLs for the public audience with the playback TTL', async () => {
+      const before = Date.now();
+
+      const result = await service.getPlaybackUrl(USER_ID, 'AAAAAAAAAAA');
+
+      expect(storageService.signGetObjectUrl).toHaveBeenCalledWith(
+        'videos/video-1/original.webm',
+        {
+          audience: 'public',
+          ttlSeconds: 21600,
+          contentDisposition: undefined,
+        },
+      );
+      expect(result.url).toBe('https://signed');
+      const expiresAt = new Date(result.expires_at).getTime();
+      expect(expiresAt).toBeGreaterThanOrEqual(before + 21600 * 1000);
+      expect(expiresAt).toBeLessThanOrEqual(Date.now() + 21600 * 1000);
+    });
+
+    it('should sign download URLs with the download TTL and an attachment disposition', async () => {
+      videoRepository.findOne.mockResolvedValue(readyVideo);
+
+      const result = await service.getDownloadUrl(USER_ID, 'AAAAAAAAAAA');
+
+      const [, options] = storageService.signGetObjectUrl.mock.calls[0] as [
+        string,
+        { audience: string; ttlSeconds: number; contentDisposition: string },
+      ];
+      expect(options.audience).toBe('public');
+      expect(options.ttlSeconds).toBe(900);
+      expect(options.contentDisposition).toMatch(
+        /^attachment; filename="Aula de Programacao\.webm"; filename\*=UTF-8''/,
+      );
+      const expiresIn = new Date(result.expires_at).getTime() - Date.now();
+      expect(expiresIn).toBeGreaterThan(890 * 1000);
+      expect(expiresIn).toBeLessThanOrEqual(900 * 1000);
     });
   });
 });

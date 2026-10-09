@@ -9,7 +9,9 @@ import storageConfig from '../config/storage.config';
 import { S3ServiceException } from '@aws-sdk/client-s3';
 import { StorageService } from '../storage/storage.service';
 import { VideoProcessingProducer } from '../video-processing/video-processing.producer';
+import { buildAttachmentDisposition } from './content-disposition.util';
 import { UploadedPartDto } from './dto/complete-upload.dto';
+import { PresignedUrlResponseDto } from './dto/presigned-url-response.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
 import {
   InitiateUploadResponseDto,
@@ -26,6 +28,7 @@ import {
   UnsupportedMediaTypeException,
   UploadSizeExceededException,
   VideoNotFoundException,
+  VideoNotReadyException,
 } from './exceptions/video.exceptions';
 import { generatePublicId, isValidPublicId } from './public-id.util';
 import { presentVideo } from './video.presenter';
@@ -202,6 +205,29 @@ export class VideosService {
     await this.videoRepository.delete({ id: video.id });
   }
 
+  async getPlaybackUrl(
+    userId: string,
+    publicId: string,
+  ): Promise<PresignedUrlResponseDto> {
+    const video = await this.findReadyOrFail(userId, publicId);
+    return this.signContentUrl(video, this.storage.playbackUrlTtlSeconds);
+  }
+
+  async getDownloadUrl(
+    userId: string,
+    publicId: string,
+  ): Promise<PresignedUrlResponseDto> {
+    const video = await this.findReadyOrFail(userId, publicId);
+    return this.signContentUrl(
+      video,
+      this.storage.downloadUrlTtlSeconds,
+      buildAttachmentDisposition(
+        video.title,
+        fileExtension(video.original_filename),
+      ),
+    );
+  }
+
   async findOwnedOrFail(userId: string, publicId: string): Promise<Video> {
     if (!isValidPublicId(publicId)) {
       throw new VideoNotFoundException();
@@ -238,6 +264,31 @@ export class VideosService {
       this.storageService,
       this.storage.thumbnailUrlTtlSeconds,
     );
+  }
+
+  private async findReadyOrFail(
+    userId: string,
+    publicId: string,
+  ): Promise<Video> {
+    const video = await this.findOwnedOrFail(userId, publicId);
+    if (video.processing_status !== VideoProcessingStatus.READY) {
+      throw new VideoNotReadyException();
+    }
+    return video;
+  }
+
+  private async signContentUrl(
+    video: Video,
+    ttlSeconds: number,
+    contentDisposition?: string,
+  ): Promise<PresignedUrlResponseDto> {
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    const url = await this.storageService.signGetObjectUrl(video.object_key, {
+      audience: 'public',
+      ttlSeconds,
+      contentDisposition,
+    });
+    return { url, expires_at: expiresAt.toISOString() };
   }
 
   private async completeInStorage(

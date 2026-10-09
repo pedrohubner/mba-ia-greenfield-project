@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { Queue } from 'bullmq';
+import { readFile } from 'fs/promises';
 import { DataSource } from 'typeorm';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { VerificationToken } from '../auth/entities/verification-token.entity';
@@ -15,6 +16,10 @@ import {
   createTestDataSource,
 } from '../test/create-test-data-source';
 import { createTestBullRootModule } from '../test/queue';
+import {
+  createMediaFixtures,
+  type MediaFixtures,
+} from '../test/media-fixtures';
 import { cleanupVideoStorage } from '../test/storage';
 import { User } from '../users/entities/user.entity';
 import {
@@ -22,6 +27,8 @@ import {
   VIDEO_PROCESSING_QUEUE,
 } from '../video-processing/video-processing.constants';
 import { Video, VideoProcessingStatus } from './entities/video.entity';
+import { generatePublicId } from './public-id.util';
+import { VIDEO_STORAGE_KEYS } from './videos.constants';
 import { VideosModule } from './videos.module';
 import { VideosService } from './videos.service';
 
@@ -241,5 +248,74 @@ describe('VideosService (integration)', () => {
     await expect(
       storageService.listParts(row.object_key, row.upload_id!),
     ).rejects.toMatchObject({ name: 'NoSuchUpload' });
+  });
+
+  describe('streaming and download', () => {
+    let fixtures: MediaFixtures;
+
+    beforeAll(async () => {
+      fixtures = await createMediaFixtures();
+    }, 120000);
+
+    afterAll(async () => {
+      await fixtures.cleanup();
+    });
+
+    async function seedReadyVideo(): Promise<{ user: User; video: Video }> {
+      const { user, channel } = await createUserWithChannel();
+      const id = crypto.randomUUID();
+      const objectKey = VIDEO_STORAGE_KEYS.original(id, 'mp4');
+      const body = await readFile(fixtures.h264Mp4);
+      await storageService.putObject(objectKey, body, 'video/mp4');
+      const video = await dataSource.getRepository(Video).save({
+        id,
+        public_id: generatePublicId(),
+        channel_id: channel.id,
+        title: 'Aula de Programação',
+        original_filename: 'aula.mp4',
+        content_type: 'video/mp4',
+        size_bytes: body.length,
+        object_key: objectKey,
+        processing_status: VideoProcessingStatus.READY,
+      });
+      return { user, video };
+    }
+
+    it('should serve the playback URL with Range requests as 206', async () => {
+      const { user, video } = await seedReadyVideo();
+
+      const { url } = await videosService.getPlaybackUrl(
+        user.id,
+        video.public_id,
+      );
+      const response = await fetch(url, {
+        headers: { Range: 'bytes=0-1023' },
+      });
+
+      expect(response.status).toBe(206);
+      expect(response.headers.get('content-range')).toBe(
+        `bytes 0-1023/${video.size_bytes}`,
+      );
+      expect((await response.arrayBuffer()).byteLength).toBe(1024);
+    });
+
+    it('should serve the download URL as an attachment named after the title', async () => {
+      const { user, video } = await seedReadyVideo();
+
+      const { url } = await videosService.getDownloadUrl(
+        user.id,
+        video.public_id,
+      );
+      const response = await fetch(url);
+
+      expect(response.status).toBe(200);
+      const disposition = response.headers.get('content-disposition')!;
+      expect(disposition.startsWith('attachment')).toBe(true);
+      expect(disposition).toContain('filename="Aula de Programacao.mp4"');
+      expect(disposition).toContain(
+        `filename*=UTF-8''${encodeURIComponent('Aula de Programação.mp4')}`,
+      );
+      await response.arrayBuffer();
+    });
   });
 });

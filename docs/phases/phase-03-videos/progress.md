@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 11/13 completed
+**SIs:** 12/13 completed
 
 ### SI-03.1 — Infra: dependências, namespaces de config e serviços Docker
 - **Status:** completed
@@ -117,9 +117,14 @@
   - The integration spec ages rows with `UPDATE … SET created_at/updated_at = now() - interval`. AC #4 ("ends processed") relies on the SI-03.9 worker flow already verified; the cleanup→worker path was not run end-to-end on the live dev worker.
 
 ### SI-03.12 — Streaming e download: URLs pré-assinadas de playback e download
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 49 passing — set A 46 (`content-disposition.util.spec.ts` 6; `videos.service.spec.ts` incl. 6 new playback/download cases; `videos.service.integration-spec.ts` incl. 2 new Range/attachment checks on real MinIO); set B 3 (spec-derived `test/videos-playback-download.e2e-spec.ts`, incl. the full upload → complete → `VideoProcessingService.process` → playback 206 → download attachment flow, ~9.6 s)
+- **Observations:**
+  - `buildAttachmentDisposition`: the ASCII fallback strips accents via NFKD and replaces non-printable-ASCII, `"` and `\` with `_` (`video` if nothing is left). `filename*` is RFC 5987 (`encodeURIComponent` plus `'()*`). MinIO honors `response-content-disposition` on the presigned GET, verified in integration and E2E.
+  - Added `PresignedUrlResponseDto` (`url`, `expires_at`). `expires_at` is computed before signing, and both URLs are signed with the public client.
+  - Full-flow fixture: `createMultipartMp4Fixture()` in `src/test/media-fixtures.ts` generates a 4 s 1280×720 H.264 clip with a `noise` filter at 16 Mb/s (~7 MiB, so exactly 2 parts of 5 MiB). A 3 s clip came out only ~5.2 MiB.
+  - The E2E compiles `WorkerModule` without `init()`, so no BullMQ `Worker` starts and no scheduler is registered under `bull-test`. It calls `VideoProcessingService.process` directly, as the spec says.
+  - `--detectOpenHandles` reports a `CustomGC` handle from the native `@css-inline/css-inline` addon (loaded by `MailModule`'s `HandlebarsAdapter`). This predates Phase 03: it also appears on the untouched baseline `test/app.e2e-spec.ts`, and Jest still exits normally. Out of scope here (follow-up if it ever blocks Jest exit).
 
 ### SI-03.13 — Documentação: openapi.json exportado e CLAUDE.md do backend
 - **Status:** pending
