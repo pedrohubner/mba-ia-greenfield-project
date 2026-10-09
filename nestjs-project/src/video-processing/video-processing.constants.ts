@@ -6,6 +6,10 @@ export const PROCESS_VIDEO_JOB = 'process-video';
 
 export const CLEANUP_STALE_UPLOADS_JOB = 'cleanup-stale-uploads';
 
+export const PROCESSING_ERROR_REASON = 'PROCESSING_ERROR';
+
+export const WORKER_SOURCE_URL_TTL_SECONDS = 3600;
+
 export interface ProcessVideoJobData {
   videoId: string;
 }

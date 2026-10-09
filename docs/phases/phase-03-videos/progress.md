@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 9/13 completed
+**SIs:** 10/13 completed
 
 ### SI-03.1 — Infra: dependências, namespaces de config e serviços Docker
 - **Status:** completed
@@ -95,9 +95,16 @@
   - The `complete` and E2E suites `obliterate` the `bull-test` queue in `beforeEach`/`afterAll`.
 
 ### SI-03.9 — Video worker: entrypoint, processor e ciclo de status
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 14 passing (9 processor unit, 4 service integration on real DB, MinIO and ffmpeg, 1 `WorkerModule` compilation), no open handles, ~12 s
+- **Observations:**
+  - **Fix attempt 1 (runtime, worker boot):** the `video-worker` container first failed with `Entity metadata for Video#channel was not found`, because `autoLoadEntities` only knew `Video` and its `ManyToOne(() => Channel)` needs `Channel` (and `Channel → User`). The worker now registers `TypeOrmModule.forFeature([Video, Channel, User])`. Boot then succeeds, and `Queue.getWorkers()` on the dev `bull` prefix reports 1 worker.
+  - **Concurrency:** the `@Processor` decorator options are static, so `VIDEO_WORKER_CONCURRENCY` is applied in `onApplicationBootstrap` via `this.worker.concurrency = …` (the BullMQ `Worker` setter). The effect is the same as the plan's `@Processor(…, { concurrency })`.
+  - `VideoProcessingService.process` skips missing videos and any status other than `uploaded`/`processing` (so `ready`, `failed`, `pending_upload` are no-ops). It writes `processing` before signing and probing, and metadata right after `assertPlayable`. It writes `thumbnail_key` + `ready` (and clears `processing_error`) after `PutObject`. The source URL is signed with `audience: 'internal'` and `WORKER_SOURCE_URL_TTL_SECONDS = 3600` (a new constant, not in the plan).
+  - Failure handling: `MediaRejectedError` → `markFailed(reasonCode)` + `UnrecoverableError`. Other errors are rethrown. `@OnWorkerEvent('failed')` writes `PROCESSING_ERROR` only when `attemptsMade >= opts.attempts` and the row is not already `failed`, so the media reason code is kept.
+  - The integration spec observes `processing` while the thumbnail is extracted (spy on `extractFrame` reads the row). For the media-failure cases it drives the real processor with a stub `Job`, so the test proves `failed` + reason code after one attempt with the original object preserved. The transient retry/exhaustion path is unit-tested; it is not exercised end-to-end with a live BullMQ worker.
+  - Not verified here: running `nestjs-api` `start:dev` side by side with the worker. `nestjs-project/CLAUDE.md` forbids starting the API server unless the user explicitly asks. Verified instead: `start:worker:dev` writes `dist-worker/worker.js` while `dist/main.js` (from `npm run build`) stays intact, so separate outDirs are in place.
+  - `tsconfig.worker.json` re-declares `exclude` (adding `dist-worker`), because `exclude` in an extending tsconfig replaces the parent's list rather than merging with it.
 
 ### SI-03.10 — Job agendado cleanup-stale-uploads: rascunhos abandonados e uploads parados
 - **Status:** pending
