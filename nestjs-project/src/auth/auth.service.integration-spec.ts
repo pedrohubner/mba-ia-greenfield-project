@@ -64,7 +64,6 @@ async function createAuthTestModule(): Promise<TestingModule> {
   }).compile();
 }
 
-// mailService is private on AuthService; spy on the real injected instance.
 function getMailService(authService: AuthService): MailService {
   return (authService as unknown as { mailService: MailService }).mailService;
 }

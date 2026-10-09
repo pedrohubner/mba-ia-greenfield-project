@@ -18,13 +18,23 @@ This is a monorepo with two main areas:
 
 See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 
-- **Frontend** (Next.js) → calls API via REST, streams from Object Storage
-- **API** (Nest.js) → business rules, auth, reads/writes DB, uploads to storage, publishes jobs to queue, sends emails
-- **Video Worker** (FFmpeg) → consumes jobs from queue, processes videos, updates DB and storage
+- **Frontend** (Next.js) → calls API via REST, uploads and streams directly from Object Storage through presigned URLs
+- **API** (Nest.js) → business rules, auth, reads/writes DB, signs storage URLs, publishes jobs to queue, sends emails
+- **Video Worker** (`video-worker` container, FFmpeg) → same codebase as `nestjs-project` (separate entrypoint `src/worker.ts`); consumes jobs from queue, processes videos, updates DB and storage
 - **Database** (PostgreSQL) → users, channels, videos, comments, likes
-- **Object Storage** (S3/MinIO) → video files and thumbnails
-- **Message Queue** (TBD) → video processing job queue
+- **Object Storage** (MinIO, S3-compatible) → video files and thumbnails; accessed only through the S3 API
+- **Message Queue** (BullMQ + Redis) → `video-processing` queue (`process-video` jobs and the scheduled `cleanup-stale-uploads` job)
 - **Email Service** (SMTP) → account confirmation and password recovery
+
+## Video Upload and Processing Flow
+
+No video bytes pass through the API:
+
+1. **Initiate** — `POST /videos` creates the draft (`pending_upload` / `draft`) and opens an S3 multipart upload.
+2. **Upload** — the client requests presigned part URLs (`POST /videos/:publicId/upload/part-urls`) and `PUT`s each part straight to storage; `GET …/upload/parts` lists what storage already has, so an interrupted upload resumes.
+3. **Complete** — `POST …/upload/complete` closes the multipart upload, checks the object size, moves the video to `uploaded` and enqueues `process-video` (job id = video id, so retries never duplicate work). `DELETE …/upload` cancels instead.
+4. **Process** — the worker probes the file with `ffprobe` (metadata, format whitelist), extracts a thumbnail frame with `ffmpeg`, and moves the video to `ready`, or to `failed` with a reason code.
+5. **Watch / download** — `GET …/playback` returns a long-lived presigned URL (storage answers `Range` with `206`); `GET …/download` returns a short-lived presigned URL served as an attachment.
 
 ## Docker Networking
 
@@ -36,6 +46,8 @@ Inside a container, `localhost` refers to the container itself, not the host mac
 - **Wrong:** `DB_HOST=localhost`
 
 This applies to all environment variables, configuration files, and code that references service hosts.
+
+**Single exception:** `STORAGE_PUBLIC_ENDPOINT=http://localhost:9000` (backend `.env`). It is not used for any container-to-container connection: presigned storage URLs are signed against it and opened by the browser on the host. Every real storage call from a container uses `STORAGE_ENDPOINT=http://minio:9000` (see `nestjs-project/CLAUDE.md` and `phase-03-videos/TD-05`).
 
 ## Working Principles
 
